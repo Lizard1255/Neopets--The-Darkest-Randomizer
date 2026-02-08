@@ -18,15 +18,15 @@ document.getElementById('isoInput').addEventListener('change', async function(e)
     const chunkSize = 10 * 1024 * 1024; // 10MB safety window
     const overlap = pattern.length - 1; 
 
-    const status = document.getElementById('status');
-    const progressBar = document.getElementById('progressBar');
-
     try {
         const handle = await window.showSaveFilePicker({
             suggestedName: 'processed_' + file.name,
             types: [{ description: 'ISO File', accept: {'application/x-iso9660-image': ['.iso']} }],
         });
         const writable = await handle.createWritable();
+
+        const status = document.getElementById('status');
+        const progressBar = document.getElementById('progressBar');
 
         status.innerText = "Scanning chunks...";
         progressBar.style.display = "block";
