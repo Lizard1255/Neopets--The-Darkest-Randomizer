@@ -2,10 +2,17 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <title>ISO Modifier Tool</title>
 </head>
 <body>
+    <h1>ISO Modifier</h1>
     
+    <!-- Large file input -->
+    <input type="file" id="isoInput" accept=".iso">
+    
+    <div id="status">Select a 3.7GB ISO to begin...</div>
+    <progress id="progressBar" value="0" max="100" style="width: 300px; display: none;"></progress>
+
+    <script src="uploader.js"></script>
 </body>
 </html>
