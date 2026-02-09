@@ -9,78 +9,175 @@ const hexToBytes = (hex) => {
     return bytes;
 };
 
-document.getElementById('isoInput').addEventListener('change', async function(e) {
-    const file = e.target.files[0]; // Get the 3.7GB file
-    if (!file) return;
+/**
+ * Helper: Standard pattern matching function
+ */
+const isMatch = (view, index, pattern) => {
+    if (!pattern || index + pattern.length > view.length) return false;
+    for (let j = 0; j < pattern.length; j++) {
+        if (view[index + j] !== pattern[j]) return false;
+    }
+    return true;
+};
 
-    const targetHex = "49444D0102"; // "IDM"
-    const pattern = hexToBytes(targetHex);
-    const chunkSize = 10 * 1024 * 1024; // 10MB safety window
-    const overlap = pattern.length - 1; 
+// --- CONFIGURATION: PARENT & CHILD RULES ---
+const RULES = [{
+    name: "IDM Primary Container",
+    startPattern: hexToBytes("49444D0124"), // Parent Start
+    stopPattern: hexToBytes("49444D0100"),  // Parent End
+    subRules: [{
+        name: "Game Logic Subchunk",
+        start: hexToBytes("0800000000000000"),       // Child Start
+        stop: hexToBytes("FFCDCDCD"),        // Child End
+        modify: (data) => {
+            // Check if the chunk is long enough for the 53rd hex pair (Index 52)
+            if (data.length >= 53) {
+                const byte53 = data[52]; 
+
+                // --- SET YOUR HEX RANGE HERE ---
+                const minValue = 0xa0; 
+                const maxValue = 0xad; 
+
+                if (byte53 >= minValue && byte53 <= maxValue) {
+                    console.log(`Condition Met! 53rd byte is 0x${byte53.toString(16).toUpperCase()}`);
+                    // Perform your modification here:
+
+                    const randomByte = Math.floor(Math.random() * (maxValue - minValue + 1)) + minValue;
+
+                    data[52] = randomByte; 
+                }
+            }
+            return data;
+        }
+    }]
+}];
+
+document.getElementById('isoInput').addEventListener('change', async function(e) {
+    const files = e.target.files;
+    if (!files.length) return;
+    const file = files[0];
+
+    // 1. Browser Security: Trigger Save Picker Immediately (User Gesture)
+    let handle;
+    try {
+        handle = await window.showSaveFilePicker({
+            suggestedName: 'modified_' + file.name,
+            types: [{
+                description: 'ISO Disk Image',
+                accept: { 'application/x-iso9660-image': ['.iso'] },
+            }],
+        });
+    } catch (err) {
+        console.log("Save cancelled.");
+        return;
+    }
+
+    const writable = await handle.createWritable();
+    const status = document.getElementById('status');
+    const progressBar = document.getElementById('progressBar');
+
+    const chunkSize = 10 * 1024 * 1024; // 10MB
+    const overlapSize = 1024; // Safety buffer for patterns
+    let offset = 0;
+    
+    let activeRule = null;
+    let currentChunkBuffers = [];
+    let globalSubMatchCount = 0;
+
+    status.innerText = "Processing 3.7GB ISO (Linear Stream)...";
+    progressBar.style.display = "block";
 
     try {
-        const handle = await window.showSaveFilePicker({
-            suggestedName: 'processed_' + file.name,
-            types: [{ description: 'ISO File', accept: {'application/x-iso9660-image': ['.iso']} }],
-        });
-        const writable = await handle.createWritable();
-
-        const status = document.getElementById('status');
-        const progressBar = document.getElementById('progressBar');
-
-        status.innerText = "Scanning chunks...";
-        progressBar.style.display = "block";
-
-        let offset = 0;
-        let matchCount = 0;
-        let currentChunkBuffers = []; // Stores parts of the current "IDM" chunk
-
         while (offset < file.size) {
-            const buffer = await file.slice(offset, offset + chunkSize).arrayBuffer();
+            // Read current chunk
+            const slice = file.slice(offset, offset + chunkSize);
+            const buffer = await slice.arrayBuffer();
             let view = new Uint8Array(buffer);
             let lastProcessedIndex = 0;
 
-            for (let i = 0; i <= view.length - pattern.length; i++) {
-                let match = true;
-                for (let j = 0; j < pattern.length; j++) {
-                    if (view[i + j] !== pattern[j]) { match = false; break; }
-                }
+            for (let i = 0; i < view.length; i++) {
+                // Case 1: Looking for Parent Start
+                if (activeRule === null) {
+                    for (const rule of RULES) {
+                        if (isMatch(view, i, rule.startPattern)) {
+                            // Write everything BEFORE the start pattern to disk
+                            await writable.write(view.slice(lastProcessedIndex, i));
+                            
+                            activeRule = rule;
+                            currentChunkBuffers = [];
+                            lastProcessedIndex = i;
+                            break;
+                        }
+                    }
+                } 
+                // Case 2: Looking for Parent End
+                else if (activeRule && isMatch(view, i, activeRule.stopPattern)) {
+                    const stopLen = activeRule.stopPattern.length;
+                    const endOfParentInView = i + stopLen;
+                    
+                    // Collect the final piece of the parent
+                    currentChunkBuffers.push(view.slice(lastProcessedIndex, endOfParentInView));
+                    
+                    // Reassemble and scan for children
+                    let parentData = new Uint8Array(await new Blob(currentChunkBuffers).arrayBuffer());
+                    
+                    for (const sub of activeRule.subRules) {
+                        for (let s = 0; s <= parentData.length - sub.start.length; s++) {
+                            if (isMatch(parentData, s, sub.start)) {
+                                for (let end = s + sub.start.length; end <= parentData.length - sub.stop.length; end++) {
+                                    if (isMatch(parentData, end, sub.stop)) {
+                                        const subEndIndex = end + sub.stop.length;
+                                        let fullChild = parentData.slice(s, subEndIndex);
+                                        
+                                        globalSubMatchCount++;
+                                        let modifiedChild = sub.modify(fullChild);
+                                        
+                                        if (globalSubMatchCount <= 5) {
+                                            console.log(`Sub-Match #${globalSubMatchCount} found!`, modifiedChild);
+                                        }
 
-                if (match) {
-                    // 1. If we were already collecting a chunk, it just ended
-                    if (matchCount > 0 && matchCount <= 5) {
-                        // Add data up to (but NOT including) this new match
-                        currentChunkBuffers.push(view.slice(lastProcessedIndex, i));
-                        
-                        // Reassemble and Log the full chunk
-                        const finalChunk = new Uint8Array(await new Blob(currentChunkBuffers).arrayBuffer());
-                        console.log(`Chunk #${matchCount} (Starts with IDM):`, finalChunk);
-                        
-                        currentChunkBuffers = []; // Reset for next chunk
+                                        parentData.set(modifiedChild, s);
+                                        s = subEndIndex - 1; 
+                                        break;
+                                    }
+                                }
+                            }
+                        }
                     }
 
-                    // 2. Start the new chunk
-                    matchCount++;
-                    lastProcessedIndex = i; // This new chunk begins AT the pattern
+                    // Write the entire (potentially modified) parent to the file
+                    await writable.write(parentData);
+
+                    // Reset state
+                    currentChunkBuffers = [];
+                    activeRule = null;
+                    lastProcessedIndex = endOfParentInView;
+                    i = endOfParentInView - 1; 
                 }
             }
 
-            // If we are currently inside one of the first 5 chunks, store the remainder of this 10MB window
-            if (matchCount > 0 && matchCount <= 5) {
-                currentChunkBuffers.push(view.slice(lastProcessedIndex, view.length - overlap));
+            // Cleanup at end of 10MB chunk
+            if (activeRule === null) {
+                // If not mid-parent, write remainder but keep overlap for next scan
+                const isEOF = (offset + chunkSize >= file.size);
+                const writeEnd = isEOF ? view.length : view.length - overlapSize;
+                
+                if (writeEnd > lastProcessedIndex) {
+                    await writable.write(view.slice(lastProcessedIndex, writeEnd));
+                }
+                // Advance offset by exactly what was committed to disk
+                offset += writeEnd; 
+            } else {
+                // If mid-parent, buffer everything since lastProcessedIndex and move offset fully
+                currentChunkBuffers.push(view.slice(lastProcessedIndex));
+                offset += view.length;
             }
 
-            // Stream to disk (Standard reassembly)
-            const isLastChunk = (offset + chunkSize >= file.size);
-            const dataToWrite = isLastChunk ? view : view.slice(0, view.length - overlap);
-            await writable.write(dataToWrite);
-
-            offset += (chunkSize - overlap);
             progressBar.value = (offset / file.size) * 100;
         }
 
         await writable.close();
-        status.innerText = `Reassembly complete. Found ${matchCount} segments.`;
+        status.innerText = `Done! Processed ${globalSubMatchCount} chunks. File is valid.`;
 
     } catch (err) {
         status.innerText = "Error: " + err.message;
