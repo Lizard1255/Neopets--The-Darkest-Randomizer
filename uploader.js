@@ -20,31 +20,42 @@ const isMatch = (view, index, pattern) => {
     return true;
 };
 
-// --- CONFIGURATION: PARENT & CHILD RULES ---
+// Global Variables
+const status = document.getElementById('status');
+let globalSubMatchCount = 0;
+
+// Rule Setup for Detecting Hex Patterns within the Code
 const RULES = [{
-    name: "IDM Primary Container",
+    name: "Asset Group Chunk",
     startPattern: hexToBytes("49444D0124"), // Parent Start
     stopPattern: hexToBytes("49444D0100"),  // Parent End
-    subRules: [{
-        name: "Game Logic Subchunk",
+    subRules: [{ // Sub-Rules for Finding Hex Patterns within the Parent Chunk
+        name: "Mote Chunk",
         start: hexToBytes("0800000000000000"),       // Child Start
         stop: hexToBytes("FFCDCDCD"),        // Child End
-        modify: (data) => {
+        modify: (data) => { // The Actual Modification Logic for the Child Chunk
+
+            // Updates Progress Bar Status
+            status.innerText = "Randomizing Mote Spawns...";
+
             // Check if the chunk is long enough for the 53rd hex pair (Index 52)
             if (data.length >= 53) {
                 const byte53 = data[52]; 
 
-                // --- SET YOUR HEX RANGE HERE ---
+                // Sets range values for the Mote Item Indexes
                 const minValue = 0xa0; 
                 const maxValue = 0xad; 
 
+                // Checks if the 53rd byte is a Mote
                 if (byte53 >= minValue && byte53 <= maxValue) {
                     console.log(`Condition Met! 53rd byte is 0x${byte53.toString(16).toUpperCase()}`);
-                    // Perform your modification here:
 
+                    // Randomly sets a Mote Type for the Spawn
                     const randomByte = Math.floor(Math.random() * (maxValue - minValue + 1)) + minValue;
-
                     data[52] = randomByte; 
+
+                    // File was modified, so increase global count
+                    globalSubMatchCount++;
                 }
             }
             return data;
@@ -52,16 +63,17 @@ const RULES = [{
     }]
 }];
 
+// Handles The File Input and Processing
 document.getElementById('isoInput').addEventListener('change', async function(e) {
     const files = e.target.files;
     if (!files.length) return;
     const file = files[0];
 
-    // 1. Browser Security: Trigger Save Picker Immediately (User Gesture)
+    // Prompts the user to select a save location for the modified ISO file
     let handle;
     try {
         handle = await window.showSaveFilePicker({
-            suggestedName: 'modified_' + file.name,
+            suggestedName: 'randomized_' + file.name,
             types: [{
                 description: 'ISO Disk Image',
                 accept: { 'application/x-iso9660-image': ['.iso'] },
@@ -73,18 +85,17 @@ document.getElementById('isoInput').addEventListener('change', async function(e)
     }
 
     const writable = await handle.createWritable();
-    const status = document.getElementById('status');
     const progressBar = document.getElementById('progressBar');
 
+    // Sets chunk size limits to prevent Ram overload
     const chunkSize = 10 * 1024 * 1024; // 10MB
     const overlapSize = 1024; // Safety buffer for patterns
     let offset = 0;
     
     let activeRule = null;
     let currentChunkBuffers = [];
-    let globalSubMatchCount = 0;
 
-    status.innerText = "Processing 3.7GB ISO (Linear Stream)...";
+    status.innerText = "Processing Iso File...";
     progressBar.style.display = "block";
 
     try {
@@ -129,7 +140,6 @@ document.getElementById('isoInput').addEventListener('change', async function(e)
                                         const subEndIndex = end + sub.stop.length;
                                         let fullChild = parentData.slice(s, subEndIndex);
                                         
-                                        globalSubMatchCount++;
                                         let modifiedChild = sub.modify(fullChild);
                                         
                                         if (globalSubMatchCount <= 5) {
@@ -173,11 +183,12 @@ document.getElementById('isoInput').addEventListener('change', async function(e)
                 offset += view.length;
             }
 
+            // Updates Progress Bar
             progressBar.value = (offset / file.size) * 100;
         }
 
         await writable.close();
-        status.innerText = `Done! Processed ${globalSubMatchCount} chunks. File is valid.`;
+        status.innerText = `Randomization Done! Modified ${globalSubMatchCount} chunks.`;
 
     } catch (err) {
         status.innerText = "Error: " + err.message;
