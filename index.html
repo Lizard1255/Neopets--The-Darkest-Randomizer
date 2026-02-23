@@ -5,14 +5,9 @@
     <title>Neopets: The Darkest Randomizer</title>
 </head>
 <body>
-    <h1>Neopets: The Darkest Faerie Randomizer</h1>
-    
-    <!-- Large file input -->
-    <input type="file" id="isoInput" accept=".iso">
-    
-    <div id="status">Input Your Unmodified ISO File to Begin</div>
-    <progress id="progressBar" value="0" max="100" style="width: 300px; display: none;"></progress>
+    <script type="module" src="randomizer.js"></script>
 
-    <script src="./uploader.js"></script>
+    <h1>Neopets: The Darkest Faerie Randomizer</h1>
+    <button onclick="runApp()">Randomize</button>
 </body>
 </html>
