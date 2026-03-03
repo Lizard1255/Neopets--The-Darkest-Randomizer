@@ -1,3 +1,19 @@
+export function toLittleEndianHex(decimal) {
+  return decimal
+    .toString(16)            // 1. Convert to hex (e.g., "1")
+    .padStart(4, '0')        // 2. Pad FIRST (e.g., "00000001")
+    .match(/.{2}/g)          // 3. Split into bytes (["00", "00", "00", "01"])
+    .reverse()               // 4. Reverse (["01", "00", "00", "00"])
+    .join('')                // 5. Join ("01000000")
+    .toUpperCase();
+}
+
+function increaseAddress(address, increment) {
+    let newAddress = parseInt(address, 16) + increment;
+    return newAddress.toString(16).toUpperCase();
+}
+
+
 export function ItemCheck(type,map,address,value){
     this.type = type;
     this.map = map;
@@ -6,6 +22,9 @@ export function ItemCheck(type,map,address,value){
     this.textLine = function(){
         return "patch=1,EE," + this.address.toString(16) + ",byte," + this.value.toString(16).toUpperCase()
     };
+    this.price = function(){
+        return "patch=1,EE," + increaseAddress(this.address,6) + ",byte," + this.value.toString(16).toUpperCase()
+    }
 }
 
 export const motes = {

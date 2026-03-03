@@ -1,5 +1,5 @@
 import { generateMotes, moteList } from "./motes.js";
-import { motes } from "./constructors.js";
+import { motes, toLittleEndianHex } from "./constructors.js";
 
 function randomize() {
     let output = "";
@@ -29,6 +29,7 @@ function generatePatches(output) {
 }
 
 export function runApp() {
+    console.log(toLittleEndianHex(2000));
     generateMotes();
     const final = randomize();
     generatePatches(final);
